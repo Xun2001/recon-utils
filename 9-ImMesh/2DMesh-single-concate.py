@@ -34,7 +34,7 @@ def plt_show_gray(image_arr, title_name: str, save_path):
 # 解析命令行参数
 parser = argparse.ArgumentParser(description='深度图插值脚本')
 # 输入图像的路径，默认为 'sparse_depth.png'
-parser.add_argument('--image_path', type=str, default='sparse_depth.png', help='输入图像的路径')
+parser.add_argument('--image_path', type=str, default='/home/qinllgroup/hongxiangyu/git_project/livo2-data-utils/9-ImMesh/data/sparse_depth.png', help='输入图像的路径')
 # 最大深度，默认为 30
 parser.add_argument('--max_depth', type=float, default=30, help='最大深度')
 # 最大允许三角形边长（像素），默认为 10
@@ -44,7 +44,7 @@ parser.add_argument('--show', action='store_true', help='是否保存中间结�
 # 分 BIN 的间距，默认为 1
 parser.add_argument('--bin_interval', type=float, default=1, help='分 BIN 的间距')
 # 保存路径，默认为指定的路径
-parser.add_argument('--save_path', type=str, default='/home/qinllgroup/hongxiangyu/datasets/recon_utils/9-ImMesh/DEBUG/debug_MAX_10/save_bin_1', help='保存路径')
+parser.add_argument('--save_path', type=str, default='/home/qinllgroup/hongxiangyu/git_project/livo2-data-utils/9-ImMsh/data/debug/debug_MAX_10/save_bin_1', help='保存路径')
 args = parser.parse_args()
 
 # 参数配置
