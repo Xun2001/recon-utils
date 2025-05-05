@@ -117,3 +117,63 @@ final_depth = np.where(mask, final_depth, depth_map)
 
 # 最终结果处理
 plt_show_gray(final_depth, 'Final_depth', save_path)
+
+
+
+def process_image_bin_points(image_path, save_path, file_name):
+    
+    image = Image.open(image_path)
+    depth_map = (np.array(image) / 255.0 * MAX_DEPTH).astype(np.float32)
+    H, W = depth_map.shape
+    mask = np.zeros((H, W), dtype=bool)
+    final_depth = np.full_like(depth_map, np.nan)
+    prev_points = np.array([]).reshape(0, 2)
+    prev_depths = np.array([])
+    
+    for i in range(num_bins):
+        low, high = depth_bins[i], depth_bins[i + 1]
+        valid_mask = (depth_map >= low) & (depth_map < high) & (~mask)
+        if not np.any(valid_mask):
+            # print(f"跳过空区间: {low:.1f}-{high:.1f}m")
+            continue
+        u, v = np.where(valid_mask)
+        depths = depth_map[valid_mask]
+        points = np.column_stack((v, u))
+        
+        if SHOW:
+            pre_triangulation = np.full((H, W), np.nan, dtype=np.float32)
+            pre_triangulation[u, v] = depths
+            plt_show_gray(pre_triangulation, f'Bin-{i}-Sparse-Depth', save_path)
+        try:
+            tri = Delaunay(points)
+        except:
+            print("Delaunay 剖分失败")
+            continue
+        MAX_EDGE = args.max_edge
+        valid_tris = []
+        for simplex in tri.simplices:
+            a, b, c = points[simplex]
+            edges = [
+                np.linalg.norm(a - b),
+                np.linalg.norm(b - c),
+                np.linalg.norm(c - a)
+            ]
+            if max(edges) <= MAX_EDGE:
+                valid_tris.append(simplex)
+                
+        if len(valid_tris) == 0:
+            # print("无有效三角形")
+            continue
+        tri_mpl = Triangulation(points[:, 0], points[:, 1], triangles=valid_tris)
+        interpolator = LinearTriInterpolator(tri_mpl, depths)
+        grid_v, grid_u = np.meshgrid(np.arange(W), np.arange(H))
+        interpolated = interpolator(grid_v.ravel(), grid_u.ravel())
+        interp_image = interpolated.reshape((H, W))
+        new_region = (~np.isnan(interp_image)) & (~mask)
+        final_depth[new_region] = interp_image[new_region]
+        mask |= new_region
+        
+        if SHOW:
+            plt_show_gray(interp_image, f'Bin-{i}-Inter', save_path)
+    final_depth = np.where(mask, final_depth, depth_map)
+    plt_show_gray(final_depth, f"{file_name}-final", save_path)

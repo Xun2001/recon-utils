@@ -1,2 +1,3 @@
 9-ImMesh/data
-9-ImMesh/*.ipynb
+9-ImMesh/scripts
+9-ImMesh/__pycache__
