@@ -13,7 +13,7 @@ parser.add_argument('--max_depth', type=float, default=30, help='最大深度')
 parser.add_argument('--max_edge', type=float, default=10, help='最大允许三角形边长（像素）')
 parser.add_argument('--show', action='store_true', help='是否保存中间结果')
 parser.add_argument('--bin_interval', type=float, default=2, help='分 BIN 的间距')
-parser.add_argument('--process_fun', type=str, default='stack_acc_pa', help='bin or stack')
+parser.add_argument('--process_fun', type=str, default='stack_acc', help='bin or stack')
 args = parser.parse_args()
 
 # 参数配置
@@ -45,4 +45,4 @@ for png_file in tqdm(png_files, desc="处理图片"):
     #     process_image_stack2_points(args,depth_bins,num_bins,image_path, save_path, os.path.splitext(png_file)[0]) # 69.8s/it 46.84s/it
     # elif args.process_fun == 'bin':
     #     process_image_bin_points(args,depth_bins,num_bins,image_path, save_path, os.path.splitext(png_file)[0])  # 
-    process_image_stack_cupy_points(args,depth_bins,num_bins,image_path, save_path, os.path.splitext(png_file)[0])
+    process_image_stack_acc_points_time(args,depth_bins,num_bins,image_path, save_path, os.path.splitext(png_file)[0])

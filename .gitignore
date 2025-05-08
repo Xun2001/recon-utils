@@ -1,3 +1,8 @@
 9-ImMesh/data
 9-ImMesh/scripts
 9-ImMesh/__pycache__
+9-ImMesh/submodule
+9-ImMesh/gpu-from-AI
+10-Mesh-acc/data
+10-Mesh-acc/from-ai
+11-Mesh-gpu/data

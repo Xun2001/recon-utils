@@ -7,7 +7,6 @@ from matplotlib.tri import LinearTriInterpolator, Triangulation
 import argparse
 from tqdm import tqdm
 
-
 def plt_show_gray(image_arr, title_name: str, save_path, MAX_DEPTH):
     """
     可视化灰度图像并保存为 PNG 文件。
@@ -87,13 +86,7 @@ def process_image_bin2_points(args, depth_bins,num_bins, depth_image_path, save_
     """
     相较于process_image_bin_points
     会对Bin进行扩展
-    Args:
-        args (_type_): _description_
-        depth_bins (_type_): _description_
-        num_bins (_type_): _description_
-        depth_image_path (_type_): _description_
-        save_path (_type_): _description_
-        file_name (_type_): _description_
+    错误代码
     """
     MAX_DEPTH = args.max_depth
     SHOW = args.show
@@ -252,11 +245,6 @@ def process_image_stack2_points(args,depth_bins,num_bins, image_path, save_path,
     """
     处理一张深度图，使用 Delaunay 剖分和三角插值进行深度插值。
     只增加前一个 bin 中 0.5m 距离内的点
-
-    Args:
-        image_path (_type_): _description_
-        save_path (_type_): _description_
-        file_name (_type_): _description_
     """
     MAX_DEPTH = args.max_depth
     SHOW = args.show
@@ -337,10 +325,6 @@ def process_image_stack_acc_points(args,depth_bins,num_bins, image_path, save_pa
     处理一张深度图，使用 Delaunay 剖分和三角插值进行深度插值。
     只增加前一个 bin 中 0.5m 距离内的点
 
-    Args:
-        image_path (_type_): _description_
-        save_path (_type_): _description_
-        file_name (_type_): _description_
     """
     MAX_DEPTH = args.max_depth
     MAX_EDGE = args.max_edge
@@ -413,3 +397,201 @@ def process_image_stack_acc_points(args,depth_bins,num_bins, image_path, save_pa
 
     final_depth = np.where(mask, final_depth, depth_map)
     plt_show_gray(final_depth, f"{file_name}-final", save_path, MAX_DEPTH)
+    
+def process_image_stack_cupy_points(args,depth_bins,num_bins, image_path, save_path, file_name):
+    """
+    处理一张深度图，使用 Delaunay 剖分和三角插值进行深度插值。
+    只增加前一个 bin 中 0.5m 距离内的点
+
+    """
+    MAX_DEPTH = args.max_depth
+    MAX_EDGE = args.max_edge
+    SHOW = args.show
+    
+    image = Image.open(image_path)
+    depth_map = (np.array(image) / 255.0 * MAX_DEPTH).astype(np.float32)
+    H, W = depth_map.shape
+    mask = np.zeros((H, W), dtype=bool)
+    final_depth = np.full_like(depth_map, np.nan)
+    prev_points = np.array([]).reshape(0, 2)
+    prev_depths = np.array([])
+
+    for i in range(num_bins):
+        low, high = depth_bins[i], depth_bins[i + 1]
+        valid_mask = (depth_map >= low) & (depth_map < high) & (~mask)
+        if not np.any(valid_mask):
+            # print(f"跳过空区间: {low:.1f}-{high:.1f}m")
+            continue
+        
+        u, v = np.where(valid_mask)
+        depths = depth_map[valid_mask]
+        points = np.column_stack((v, u))
+        
+        all_points = np.vstack((prev_points, points))
+        all_depths = np.hstack((prev_depths, depths))
+        
+        prev_mask = (depth_map >= (high-0.5)) & (depth_map < high) & (~mask)
+        prev_u,prev_v = np.where(prev_mask)
+        prev_depths = depth_map[prev_mask]
+        prev_points = np.column_stack((prev_v,prev_u))
+
+        if SHOW:
+            pre_triangulation = np.full((H, W), np.nan, dtype=np.float32)
+            pre_triangulation[u, v] = depths
+            plt_show_gray(pre_triangulation, f'Bin-{i}-Sparse-Depth', save_path, MAX_DEPTH)
+
+        try:
+            tri = Delaunay(all_points)
+        except:
+            print("Delaunay 剖分失败")
+            continue
+
+        simplices = tri.simplices
+        if len(simplices) == 0:
+            continue
+        pts = all_points[simplices]
+        edges = pts - pts[:, [1, 2, 0], :]  # 计算三条边向量
+        edge_lengths = np.linalg.norm(edges, axis=2)
+        max_edge_lengths = np.max(edge_lengths, axis=1)
+        valid_tris_mask = max_edge_lengths <= MAX_EDGE
+        valid_tris = simplices[valid_tris_mask]
+
+        if len(valid_tris) == 0:
+            # print("无有效三角形")
+            continue
+
+        tri_mpl = Triangulation(all_points[:, 0], all_points[:, 1], triangles=valid_tris)
+        interpolator = LinearTriInterpolator(tri_mpl, all_depths)
+        grid_v, grid_u = np.meshgrid(np.arange(W), np.arange(H))
+        interpolated = interpolator(grid_v.ravel(), grid_u.ravel())
+        interp_image = interpolated.reshape((H, W))
+        new_region = (~np.isnan(interp_image)) & (~mask)
+        final_depth[new_region] = interp_image[new_region]
+        mask |= new_region
+
+        if SHOW:
+            plt_show_gray(interp_image, f'Bin-{i}-Inter', save_path, MAX_DEPTH)
+
+
+    final_depth = np.where(mask, final_depth, depth_map)
+    plt_show_gray(final_depth, f"{file_name}-final", save_path, MAX_DEPTH)
+def process_image_stack_acc_gpu_points(args,depth_bins,num_bins, image_path, save_path, file_name):
+    """
+    处理一张深度图，使用 Delaunay 剖分和三角插值进行深度插值。
+    只增加前一个 bin 中 0.5m 距离内的点
+
+    """
+    MAX_DEPTH = args.max_depth
+    MAX_EDGE = args.max_edge
+    SHOW = args.show
+    
+    image = Image.open(image_path)
+    depth_map = (np.array(image) / 255.0 * MAX_DEPTH).astype(np.float32)
+    H, W = depth_map.shape
+    mask = np.zeros((H, W), dtype=bool)
+    final_depth = np.full_like(depth_map, np.nan)
+    prev_points = np.array([]).reshape(0, 2)
+    prev_depths = np.array([])
+
+    for i in range(num_bins):
+        low, high = depth_bins[i], depth_bins[i + 1]
+        valid_mask = (depth_map >= low) & (depth_map < high) & (~mask)
+        if not np.any(valid_mask):
+            # print(f"跳过空区间: {low:.1f}-{high:.1f}m")
+            continue
+        
+        u, v = np.where(valid_mask)
+        depths = depth_map[valid_mask]
+        points = np.column_stack((v, u))
+        
+        all_points = np.vstack((prev_points, points))
+        all_depths = np.hstack((prev_depths, depths))
+        
+        prev_mask = (depth_map >= (high-0.5)) & (depth_map < high) & (~mask)
+        prev_u,prev_v = np.where(prev_mask)
+        prev_depths = depth_map[prev_mask]
+        prev_points = np.column_stack((prev_v,prev_u))
+
+        if SHOW:
+            pre_triangulation = np.full((H, W), np.nan, dtype=np.float32)
+            pre_triangulation[u, v] = depths
+            plt_show_gray(pre_triangulation, f'Bin-{i}-Sparse-Depth', save_path, MAX_DEPTH)
+
+        try:
+            tri = Delaunay(all_points)
+        except:
+            print("Delaunay 剖分失败")
+            continue
+
+        simplices = tri.simplices
+        if len(simplices) == 0:
+            continue
+        pts = all_points[simplices]
+        edges = pts - pts[:, [1, 2, 0], :]  # 计算三条边向量
+        edge_lengths = np.linalg.norm(edges, axis=2)
+        max_edge_lengths = np.max(edge_lengths, axis=1)
+        valid_tris_mask = max_edge_lengths <= MAX_EDGE
+        valid_tris = simplices[valid_tris_mask]
+
+        if len(valid_tris) == 0:
+            # print("无有效三角形")
+            continue
+
+        tri_mpl = Triangulation(all_points[:, 0], all_points[:, 1], triangles=valid_tris)
+        interpolator = LinearTriInterpolator(tri_mpl, all_depths)
+        grid_v, grid_u = np.meshgrid(np.arange(W), np.arange(H))
+        interpolated = interpolator(grid_v.ravel(), grid_u.ravel())
+        interp_image = interpolated.reshape((H, W))
+        new_region = (~np.isnan(interp_image)) & (~mask)
+        final_depth[new_region] = interp_image[new_region]
+        mask |= new_region
+
+        if SHOW:
+            plt_show_gray(interp_image, f'Bin-{i}-Inter', save_path, MAX_DEPTH)
+
+
+    final_depth = np.where(mask, final_depth, depth_map)
+    plt_show_gray(final_depth, f"{file_name}-final", save_path, MAX_DEPTH)
+    
+    
+time_new = time.time()
+grid_x, grid_y = cp.meshgrid(cp.arange(W), cp.arange(H))
+print(f"time:{time.time()-time_new}")
+
+
+
+all_depths_cp = cp.asarray(all_depths)
+
+unique_indices = cp.unique(valid_tris.flatten())  # shape [K,], K ≤ N
+edge_mask = cp.zeros(all_points_cp.shape[0], dtype=bool)
+edge_mask[unique_indices] = True
+edge_filter_points_cp = all_points_cp[edge_mask]
+edge_filter_depths_cp = all_depths_cp[edge_mask]
+
+tri_edge = Delaunay(edge_filter_points_cp)
+interp = LinearNDInterpolator(tri_edge, edge_filter_depths_cp, fill_value=cp.nan)
+print(f"time:{time.time()-time_new}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+unique_indices = cp.unique(simplices_filter.flatten())
+
+# 找出在 simplices_filter 中出现的所有点的索引
+unique_indices = cp.unique(simplices_filter.flatten())
+
+# 找出被过滤掉的点的索引
+filtered_out_indices = cp.setdiff1d(cp.arange(len(all_points_cp)), unique_indices)
+
+# 从 all_points_cp 中移除被过滤掉的点
+new_points = cp.delete(all_points_cp, filtered_out_indices, axis=0)
